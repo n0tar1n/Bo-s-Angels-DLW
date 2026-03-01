@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { Star, Sun } from 'lucide-react'
-import { getMasterySnapshot, masteryToColor } from '../lib/mastery'
+import { Star, Sun, Trash2 } from 'lucide-react'
+import { computeConceptTrend, getMasterySnapshot, masteryToColor, trendToColor } from '../lib/mastery'
 import { hashString, mulberry32, randomBetween } from '../lib/random'
-import type { ConceptEdge, ConceptNode, Course } from '../types'
+import type { ConceptEdge, ConceptNode, Course, TrendLabel } from '../types'
 import OrbitRing from './OrbitRing'
 
 interface SunCourseSystemProps {
@@ -11,15 +11,18 @@ interface SunCourseSystemProps {
   motionEnabled: boolean
   mode: 'preview' | 'focused'
   deEmphasized?: boolean
+  canRemoveCourse?: boolean
   selectedConceptId?: string | null
   onOpenCourse: (courseId: string) => void
   onOpenConcept: (courseId: string, conceptId: string) => void
+  onRequestRemoveCourse?: (courseId: string, courseTitle: string) => void
 }
 
 interface OrbitConcept extends ConceptNode {
   effectiveMastery: number | null
   rustLevel: number
   isDecaying: boolean
+  trend: TrendLabel
 }
 
 interface PositionedConcept {
@@ -47,6 +50,8 @@ const useIsMobile = () => {
 const pickPreviewConcepts = (concepts: OrbitConcept[], limit: number) => {
   return [...concepts]
     .sort((a, b) => {
+      const importanceDelta = (b.importance ?? 0) - (a.importance ?? 0)
+      if (importanceDelta !== 0) return importanceDelta
       const aScore = a.effectiveMastery ?? -1
       const bScore = b.effectiveMastery ?? -1
       if (aScore !== bScore) return aScore - bScore
@@ -126,19 +131,24 @@ const SunCourseSystem = ({
   motionEnabled,
   mode,
   deEmphasized,
+  canRemoveCourse,
   selectedConceptId,
   onOpenCourse,
   onOpenConcept,
+  onRequestRemoveCourse,
 }: SunCourseSystemProps) => {
   const isMobile = useIsMobile()
   const [expandedMobile, setExpandedMobile] = useState(false)
+  const hoverScaleClass = motionEnabled ? 'group-hover/sun:scale-107' : ''
 
   const decoratedConcepts = useMemo(() => {
     return course.conceptNodes.map((concept) => {
       const snapshot = getMasterySnapshot(concept, nowIso)
+      const trend = computeConceptTrend(concept)
       return {
         ...concept,
         ...snapshot,
+        trend,
       }
     })
   }, [course.conceptNodes, nowIso])
@@ -207,7 +217,8 @@ const SunCourseSystem = ({
         </button>
 
         {positioned.map(({ concept, x, y, labelPosition }) => {
-          const glow = masteryToColor(concept.effectiveMastery)
+          const trendColor = trendToColor(concept.trend)
+          const masteryRingColor = masteryToColor(concept.effectiveMastery)
           const selected = selectedConceptId === concept.id
           const dimmed = concept.isDecaying && concept.rustLevel > 0.12
 
@@ -220,13 +231,22 @@ const SunCourseSystem = ({
               style={{ left: x, top: y, transform: 'translate(-50%, -50%)' }}
             >
               <span
-                className={`inline-flex h-8 w-8 items-center justify-center rounded-full transition ${selected ? 'scale-110' : 'scale-100 hover:scale-105'}`}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-full transition ${selected ? 'scale-125' : 'scale-100 hover:scale-105'}`}
                 style={{
-                  boxShadow: `0 0 14px ${toRgba(glow, dimmed ? 0.38 : 0.65)}`,
+                  boxShadow: selected
+                    ? `0 0 20px ${toRgba(trendColor, dimmed ? 0.52 : 0.9)}`
+                    : `0 0 14px ${toRgba(trendColor, dimmed ? 0.38 : 0.65)}`,
                   opacity: dimmed ? 0.68 : 0.94,
                 }}
               >
-                <Star size={15} strokeWidth={1.8} style={{ color: glow, fill: glow }} />
+                <span
+                  className="absolute h-7 w-7 rounded-full border"
+                  style={{
+                    borderColor: toRgba(masteryRingColor, 0.6),
+                    boxShadow: `0 0 7px ${toRgba(masteryRingColor, 0.35)}`,
+                  }}
+                />
+                <Star size={15} strokeWidth={1.8} style={{ color: trendColor, fill: trendColor }} />
               </span>
 
               <span
@@ -249,21 +269,48 @@ const SunCourseSystem = ({
   const { inner, middle, outer } = splitIntoRings(previewConcepts)
 
   return (
-    <article className={`relative mx-auto h-[420px] w-full max-w-[420px] p-4 transition ${deEmphasized ? 'opacity-20 blur-[2px]' : 'opacity-100'}`}>
+    <article
+      className={`group relative mx-auto h-[420px] w-full max-w-[420px] p-4 transition ${
+        deEmphasized ? 'opacity-20 blur-[2px]' : 'opacity-100'
+      } ${canRemoveCourse ? 'hover:z-30 focus-within:z-30' : ''}`}
+    >
+      {canRemoveCourse && onRequestRemoveCourse && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onRequestRemoveCourse(course.id, course.name)
+          }}
+          className="absolute left-[calc(50%+96px)] top-[calc(50%-64px)] z-40 inline-flex h-10 min-w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-1 rounded-full border border-rose-200/45 bg-slate-950/84 px-3 text-xs font-semibold text-rose-100 opacity-0 shadow-[0_0_16px_rgba(251,113,133,0.28)] transition-all duration-250 hover:bg-rose-500/24 group-hover:translate-y-[-54%] group-hover:opacity-100 group-focus-within:translate-y-[-54%] group-focus-within:opacity-100"
+          aria-label={`Remove ${course.name}`}
+          title={`Remove ${course.name}`}
+        >
+          <Trash2 size={15} />
+          <span className="hidden sm:inline">Remove</span>
+        </button>
+      )}
+
       <button
         type="button"
         onClick={() => onOpenCourse(course.id)}
-        className="group absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2"
+        className="group/sun absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2"
       >
         <span className="absolute inset-[-18px] rounded-full border border-amber-200/20" />
         <span
-          className="relative inline-flex h-24 w-24 items-center justify-center rounded-full border border-amber-100/35 bg-[radial-gradient(circle_at_30%_30%,#fff7bf,#f59e0b_38%,#ea580c_74%,#7c2d12_100%)] transition-transform duration-300 group-hover:scale-105"
+          className={`relative inline-flex h-24 w-24 items-center justify-center rounded-full border border-amber-100/35 bg-[radial-gradient(circle_at_30%_30%,#fff7bf,#f59e0b_38%,#ea580c_74%,#7c2d12_100%)] transition-transform duration-300 ${hoverScaleClass}`}
           style={{ boxShadow: '0 0 30px rgba(245,158,11,0.45), 0 0 90px rgba(251,146,60,0.2)' }}
         >
           <Sun size={24} strokeWidth={1.8} className="absolute top-3 text-amber-100" />
           <span
             title={course.name}
-            className="absolute inset-x-2 bottom-2 truncate rounded bg-slate-950/58 px-1 py-0.5 text-center text-[9px] font-medium text-amber-50"
+            className="absolute inset-x-1.5 bottom-1.5 z-30 truncate rounded-full bg-slate-950/65 px-1.5 py-0.5 text-center text-[11px] font-semibold text-amber-50 transition-opacity duration-200 ease-out group-hover:opacity-0"
+          >
+            {course.name}
+          </span>
+
+          <span
+            title={course.name}
+            className="pointer-events-none absolute left-1/2 top-full z-[70] mt-2 w-max max-w-none -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900/92 px-0 py-0 text-center text-[0px] font-semibold leading-none text-amber-50 opacity-0 shadow-[0_0_22px_rgba(251,191,36,0.5)] transition-all duration-300 ease-out group-hover:mt-5 group-hover:px-4 group-hover:py-2 group-hover:text-[24px] group-hover:leading-tight group-hover:opacity-100"
           >
             {course.name}
           </span>

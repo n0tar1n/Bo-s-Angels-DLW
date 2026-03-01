@@ -16,6 +16,9 @@ export interface ConceptNode {
   id: string
   title: string
   summary: string
+  scope?: 'module' | 'foundation'
+  importance?: 1 | 2 | 3 | 4 | 5
+  tags?: string[]
   mastery: number | null
   lastPracticedAt: string | null
   firstExplainedAt: string | null
@@ -35,11 +38,12 @@ export interface Course {
   syllabus: string
   conceptNodes: ConceptNode[]
   conceptEdges: ConceptEdge[]
+  sourceFileIds?: string[]
   createdAt: string
   lastActiveAt: string
 }
 
-export type TrendLabel = 'improving' | 'stagnating' | 'regressing'
+export type TrendLabel = 'improving' | 'stagnating' | 'regressing' | 'unknown'
 
 export interface EvaluationResult {
   alignmentScore: number
@@ -81,4 +85,35 @@ export interface MasterySnapshot {
   effectiveMastery: number | null
   rustLevel: number
   isDecaying: boolean
+}
+
+export interface ExtractedModuleMeta {
+  name: string
+  assumed_level: 'intro' | 'intermediate' | 'advanced'
+  graph_version: string
+}
+
+export interface ExtractedConceptNode {
+  id: string
+  name: string
+  summary: string
+  scope: 'module' | 'foundation'
+  importance: 1 | 2 | 3 | 4 | 5
+  tags: string[]
+}
+
+export interface ExtractedConceptEdge {
+  from: string
+  to: string
+  type: 'prerequisite'
+}
+
+export interface ExtractedCourseGraph {
+  module: ExtractedModuleMeta
+  nodes: ExtractedConceptNode[]
+  edges: ExtractedConceptEdge[]
+  sanity_checks: {
+    is_dag_claim: boolean
+    notes: string[]
+  }
 }

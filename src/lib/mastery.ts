@@ -31,6 +31,26 @@ export const masteryToColor = (mastery: number | null) => {
   return 'var(--star-red)'
 }
 
+export const trendToColor = (trend: TrendLabel) => {
+  if (trend === 'improving') return 'var(--star-green)'
+  if (trend === 'stagnating') return 'var(--star-yellow)'
+  if (trend === 'regressing') return 'var(--star-red)'
+  return 'var(--star-gray)'
+}
+
+export const getTrendColor = (trend: TrendLabel) => {
+  if (trend === 'improving') {
+    return 'border-emerald-300/80 shadow-[0_0_10px_rgba(16,185,129,0.35)]'
+  }
+  if (trend === 'stagnating') {
+    return 'border-amber-300/80 shadow-[0_0_10px_rgba(251,191,36,0.35)]'
+  }
+  if (trend === 'regressing') {
+    return 'border-rose-300/80 shadow-[0_0_10px_rgba(244,63,94,0.35)]'
+  }
+  return 'border-slate-300/65 shadow-[0_0_10px_rgba(148,163,184,0.3)]'
+}
+
 export const masteryTierLabel = (mastery: number | null) => {
   if (mastery === null) return 'Not attempted'
   if (mastery >= 0.8) return 'Strong'
@@ -39,7 +59,7 @@ export const masteryTierLabel = (mastery: number | null) => {
 }
 
 export const computeConceptTrend = (concept: ConceptNode): TrendLabel => {
-  if (concept.attempts.length < 2) return 'stagnating'
+  if (concept.attempts.length < 2) return 'unknown'
   const recentAttempts = concept.attempts.slice(-3)
   const first = recentAttempts[0]
   const last = recentAttempts[recentAttempts.length - 1]

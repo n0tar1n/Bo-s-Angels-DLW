@@ -5,9 +5,11 @@ import AddCourseModal from '../components/AddCourseModal'
 import ConstellationGraph from '../components/ConstellationGraph'
 import ExplainModal from '../components/ExplainModal'
 import QuizModal from '../components/QuizModal'
+import RemoveCourseModal from '../components/RemoveCourseModal'
 import SidebarPanel from '../components/SidebarPanel'
 import SunCourseSystem from '../components/SunCourseSystem'
 import { useAppStore } from '../lib/appStore'
+import { createCourseFromMaterials } from '../lib/courseCreation'
 import { computeConceptTrend, getMasterySnapshot } from '../lib/mastery'
 import { mockAiService } from '../lib/mockAi'
 import { pickWarmupConceptId } from '../lib/mockGraph'
@@ -27,7 +29,8 @@ type CourseTab = 'overview' | 'map'
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 const GalaxyPage = () => {
-  const { courses, nowIso, addCourse, applyEvaluation, applyQuizResult, applyRecapAction } = useAppStore()
+  const { courses, nowIso, addCourse, addCourseFromGraph, removeCourse, applyEvaluation, applyQuizResult, applyRecapAction } =
+    useAppStore()
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -49,6 +52,7 @@ const GalaxyPage = () => {
     questions: [],
   })
   const [bannerMessage, setBannerMessage] = useState<string | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null)
 
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState({ width: 1200, height: 760 })
@@ -129,7 +133,39 @@ const GalaxyPage = () => {
   }, [conceptFromQuery, selectedConceptId, selectedCourse])
 
   const selectedConcept = decoratedConcepts.find((concept) => concept.id === resolvedSelectedConceptId) ?? null
-  const selectedTrend = selectedConcept ? computeConceptTrend(selectedConcept) : 'stagnating'
+  const selectedTrend = selectedConcept ? computeConceptTrend(selectedConcept) : 'unknown'
+
+  const warmupRows = useMemo(() => {
+    if (!selectedCourse) return []
+
+    const trendPriority = (trend: ReturnType<typeof computeConceptTrend>) => {
+      if (trend === 'regressing') return 0
+      if (trend === 'stagnating') return 1
+      if (trend === 'unknown') return 2
+      return 3
+    }
+
+    return [...decoratedConcepts]
+      .map((concept) => ({
+        conceptId: concept.id,
+        title: concept.title,
+        trend: computeConceptTrend(concept),
+        mastery: concept.effectiveMastery,
+      }))
+      .sort((a, b) => {
+        const p = trendPriority(a.trend) - trendPriority(b.trend)
+        if (p !== 0) return p
+        const am = a.mastery ?? -1
+        const bm = b.mastery ?? -1
+        return am - bm
+      })
+      .slice(0, 6)
+      .map(({ conceptId, title, trend }) => ({
+        conceptId,
+        title,
+        trend,
+      }))
+  }, [decoratedConcepts, selectedCourse])
 
   const cols = viewport.width < 900 ? 1 : viewport.width < 1500 ? 2 : 3
   const gapX = 620
@@ -203,10 +239,60 @@ const GalaxyPage = () => {
     navigate('/')
   }
 
-  const handleCreateCourse = async (payload: { name: string; syllabus: string }) => {
+  const handleConfirmRemoveCourse = () => {
+    if (!removeTarget) return
+    const removingId = removeTarget.id
+    const removingCurrent = selectedCourse?.id === removingId
+    if (removingCurrent) {
+      setSelectedConceptId(null)
+      navigate('/')
+    }
+    removeCourse(removingId)
+    setBannerMessage(`Removed "${removeTarget.name}".`)
+    setRemoveTarget(null)
+  }
+
+  const handleCreateCourse = async (payload: { name: string; syllabus: string; files: File[] }) => {
     await new Promise((resolve) => setTimeout(resolve, 550))
-    const created = addCourse(payload)
+    let warning: string | undefined
+    let created
+    const hasFiles = payload.files.length > 0
+
+    if (hasFiles) {
+      try {
+        const response = await createCourseFromMaterials({
+          title: payload.name,
+          syllabusText: payload.syllabus,
+          files: payload.files,
+        })
+
+        if (response.ok && response.graph.nodes.length > 0) {
+          created = addCourseFromGraph({
+            name: payload.name,
+            syllabus: payload.syllabus,
+            extractedGraph: response.graph,
+            sourceFileIds: response.sourceFileIds,
+          })
+        } else {
+          warning = 'Using fallback extraction (no file-based parse).'
+        }
+      } catch {
+        warning = 'Using fallback extraction (no file-based parse).'
+      }
+    } else {
+      warning = undefined
+    }
+
+    if (!created) {
+      created = addCourse({ name: payload.name, syllabus: payload.syllabus })
+      if (hasFiles) {
+        warning = warning ?? 'Using fallback extraction (no file-based parse).'
+      }
+    }
+
     navigate(`/course/${created.id}?tab=map`)
+    if (warning) setBannerMessage(warning)
+    return warning ? { warning } : undefined
   }
 
   const runQuizGeneration = async (mode: 'full' | 'quick', weakAreas?: string[]) => {
@@ -387,7 +473,11 @@ const GalaxyPage = () => {
                             motionEnabled={!reduceMotion && !focused}
                             mode={focused ? 'focused' : 'preview'}
                             deEmphasized={Boolean(inCourse && !focused)}
+                            canRemoveCourse={!inCourse}
                             selectedConceptId={focused ? resolvedSelectedConceptId : null}
+                            onRequestRemoveCourse={(courseId, courseTitle) =>
+                              setRemoveTarget({ id: courseId, name: courseTitle })
+                            }
                             onOpenCourse={(courseId) => {
                               if (inCourse && selectedCourse?.id === courseId) {
                                 setCourseTab('map')
@@ -449,6 +539,8 @@ const GalaxyPage = () => {
                 concept={selectedConcept}
                 nowIso={nowIso}
                 trend={selectedTrend}
+                warmupRows={warmupRows}
+                onPickWarmupConcept={(conceptId) => setConceptAndSync(selectedCourse.id, conceptId)}
                 onExplain={() => {
                   if (!selectedConcept) {
                     setBannerMessage('Select a concept star first.')
@@ -474,6 +566,13 @@ const GalaxyPage = () => {
       </div>
 
       {showAddModal && <AddCourseModal onClose={() => setShowAddModal(false)} onCreate={handleCreateCourse} />}
+      {removeTarget && (
+        <RemoveCourseModal
+          courseTitle={removeTarget.name}
+          onCancel={() => setRemoveTarget(null)}
+          onConfirm={handleConfirmRemoveCourse}
+        />
+      )}
 
       {showExplainModal && selectedCourse && selectedConcept && (
         <ExplainModal

@@ -1,4 +1,11 @@
-import type { AttemptAction, AttemptEvent, ConceptEdge, ConceptNode, Course } from '../types'
+import type {
+  AttemptAction,
+  AttemptEvent,
+  ConceptEdge,
+  ConceptNode,
+  Course,
+  ExtractedCourseGraph,
+} from '../types'
 import { daysAgo } from './date'
 import { clamp, hashString, mulberry32, pickOne, randomBetween } from './random'
 
@@ -308,6 +315,67 @@ export const createCourseFromSyllabus = (
     conceptEdges: graph.conceptEdges,
     createdAt: nowIso,
     lastActiveAt: recentlyTouched[0] ?? nowIso,
+  }
+}
+
+const sanitizeConceptId = (id: string, index: number) => {
+  const compact = id.replace(/[^a-zA-Z0-9_-]/g, '')
+  if (!compact) return `concept-${index + 1}`
+  return compact.startsWith('concept-') ? compact : `concept-${compact}`
+}
+
+export const createCourseFromExtractedGraph = (
+  name: string,
+  syllabus: string,
+  extracted: ExtractedCourseGraph,
+  nowIso: string,
+  sourceFileIds?: string[],
+): Course => {
+  const courseId = `course-${hashString(`${name}-${nowIso}-${extracted.module.graph_version}`).toString(16).slice(0, 8)}`
+  const nodeMap = new Map<string, string>()
+
+  const conceptNodes: ConceptNode[] = extracted.nodes.slice(0, 60).map((node, index) => {
+    const id = sanitizeConceptId(node.id, index)
+    nodeMap.set(node.id, id)
+
+    return {
+      id,
+      title: node.name,
+      summary: node.summary,
+      scope: node.scope,
+      importance: node.importance,
+      tags: node.tags,
+      mastery: null,
+      lastPracticedAt: null,
+      firstExplainedAt: null,
+      attempts: [],
+      createdAt: nowIso,
+    }
+  })
+
+  const conceptEdges: ConceptEdge[] = extracted.edges
+    .filter((edge) => edge.type === 'prerequisite')
+    .map((edge, index) => {
+      const source = nodeMap.get(edge.from)
+      const target = nodeMap.get(edge.to)
+      if (!source || !target || source === target) return null
+      return {
+        id: `edge-${index + 1}-${source}-${target}`,
+        source,
+        target,
+      }
+    })
+    .filter((edge): edge is ConceptEdge => edge !== null)
+
+  return {
+    id: courseId,
+    name,
+    syllabus,
+    conceptNodes,
+    conceptEdges,
+    sourceFileIds,
+    createdAt: nowIso,
+    lastActiveAt: nowIso,
   }
 }
 

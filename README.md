@@ -8,17 +8,26 @@ Responsive React + TypeScript web prototype for an AI-powered learning tracker.
 - Tailwind CSS
 - React Router
 - React Flow + dagre (graph rendering + layout)
+- Express API route for course-material extraction (`/api/courses/create`)
+- OpenAI Node SDK (server-side only)
 - LocalStorage persistence
-- Deterministic mock AI layer (no backend/API calls)
+- Deterministic mock AI layer for explain/quiz flows
 
 ## Features
 
 - Unified Galaxy Workspace (`/` and `/course/:courseId`)
   - Landing view shows course suns with orbiting preview stars
-  - Click sun/star -> smooth camera zoom into selected course (same workspace)
+  - Hover a sun for a visible `Remove` control with confirmation dialog
+  - Click a sun -> smooth camera zoom into selected course (same workspace)
   - `Back to Galaxy` reverses zoom and restores all courses
-  - `Add Course` modal with syllabus/topic input
+  - `Add Course` modal with syllabus/topic input and optional file attachments
   - New courses auto-generate a 20-35 node concept graph (DAG prerequisites)
+- Add Course via attachments (PDF/PPT/PPTX/DOCX/TXT/MD)
+  - Upload files + optional syllabus text
+  - API uploads files to OpenAI Files API
+  - Responses API returns structured concept graph JSON (nodes + prerequisite edges)
+  - Graph is persisted in localStorage and used immediately in galaxy/course views
+  - If extraction fails, app falls back to local mock graph generation and shows a warning banner
 - In-course tabs
   - `Overview`: connected prerequisite graph view for subtopics/concepts
   - `Map`: zoomed solar-system course map (sun + orbiting concept stars)
@@ -44,14 +53,29 @@ Responsive React + TypeScript web prototype for an AI-powered learning tracker.
 - `src/lib/` mock generators, store, layout, mastery logic
 - `src/types/` strong TypeScript models
 
-## Run
+## Run (Client + API)
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open: `http://localhost:5173`
+Set server env vars before running if you want file-based extraction:
+
+```bash
+export OPENAI_API_KEY=your_key_here
+# optional
+export OPENAI_MODEL=gpt-4.1-mini
+```
+
+Then run:
+
+```bash
+npm run dev
+```
+
+Open app: `http://localhost:5173`  
+API runs on: `http://localhost:8787` (proxied via Vite `/api`)
 
 ## Build
 
@@ -63,9 +87,15 @@ npm run preview
 ## Notes
 
 - Data is stored in browser `localStorage` key: `constellation-coach-state-v1`.
-- No backend is required.
-- If you want to connect real AI calls later, replace the methods in `src/lib/mockAi.ts` and keep the same return types.
+- `OPENAI_API_KEY` stays server-side only.
+- Without API key, regular text-based course creation still works. File-based extraction falls back to mock graph generation.
+- Explain/quiz actions remain mocked in `src/lib/mockAi.ts` (no client-side API key use).
 - Navigation flow:
   - Select course from galaxy (sun/star)
   - In course context, switch tabs: `Overview` / `Map`
   - Select concept -> Explain/Quiz actions -> mastery updates
+- Add-course flow:
+  - Enter title + (syllabus text and/or files)
+  - App calls `/api/courses/create` for extraction
+  - New course appears in galaxy with preview stars
+  - File limits: up to 8 files, 15MB each (`.pdf`, `.ppt`, `.pptx`, `.docx`, `.txt`, `.md`)

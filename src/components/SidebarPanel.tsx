@@ -1,12 +1,21 @@
 import type { ConceptNode, TrendLabel } from '../types'
 import { formatShortDate, relativeDaysText } from '../lib/date'
-import { masteryTierLabel } from '../lib/mastery'
+import { getTrendColor, masteryTierLabel } from '../lib/mastery'
 import TrendPill from './TrendPill'
+import { Star } from 'lucide-react'
+
+interface WarmupRow {
+  conceptId: string
+  title: string
+  trend: TrendLabel
+}
 
 interface SidebarPanelProps {
   concept: (ConceptNode & { effectiveMastery: number | null; rustLevel: number; isDecaying: boolean }) | null
   nowIso: string
   trend: TrendLabel
+  warmupRows?: WarmupRow[]
+  onPickWarmupConcept?: (conceptId: string) => void
   onExplain: () => void
   onFullQuiz: () => void
   onQuickCheck: () => void
@@ -17,6 +26,8 @@ const SidebarPanel = ({
   concept,
   nowIso,
   trend,
+  warmupRows = [],
+  onPickWarmupConcept,
   onExplain,
   onFullQuiz,
   onQuickCheck,
@@ -60,6 +71,45 @@ const SidebarPanel = ({
       {concept.isDecaying && (
         <div className="rounded-xl border border-amber-300/30 bg-amber-100/10 p-3 text-xs text-amber-100">
           Rust is increasing: this concept has not been practiced for over 7 days.
+        </div>
+      )}
+
+      {warmupRows.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs uppercase tracking-[0.2em] text-slate-400">Warm-up Table</p>
+          <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/45">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-white/10 bg-slate-950/35 text-slate-300">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Subtopic</th>
+                  <th className="px-3 py-2 font-medium text-right">Trend</th>
+                </tr>
+              </thead>
+              <tbody>
+                {warmupRows.map((row) => (
+                  <tr key={row.conceptId} className="border-b border-white/6 last:border-b-0">
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => onPickWarmupConcept?.(row.conceptId)}
+                        className="inline-flex items-center gap-2 text-left text-slate-100 hover:text-cyan-100"
+                      >
+                        <span
+                          className={`inline-flex h-5 w-5 items-center justify-center rounded-full border bg-slate-900/75 ${getTrendColor(row.trend)}`}
+                        >
+                          <Star size={10} strokeWidth={2} className="text-slate-100" />
+                        </span>
+                        <span className="max-w-[170px] truncate">{row.title}</span>
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <TrendPill trend={row.trend} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

@@ -8,8 +8,8 @@ import {
   useState,
   type PropsWithChildren,
 } from 'react'
-import type { AppState, Course, EvaluationResult, QuizSessionResult } from '../types'
-import { createCourseFromSyllabus, createSeedCourses } from './mockGraph'
+import type { AppState, Course, EvaluationResult, ExtractedCourseGraph, QuizSessionResult } from '../types'
+import { createCourseFromExtractedGraph, createCourseFromSyllabus, createSeedCourses } from './mockGraph'
 import { clamp } from './random'
 
 const STORAGE_KEY = 'constellation-coach-state-v1'
@@ -19,10 +19,19 @@ interface AddCourseInput {
   syllabus: string
 }
 
+interface AddCourseFromGraphInput {
+  name: string
+  syllabus: string
+  extractedGraph: ExtractedCourseGraph
+  sourceFileIds?: string[]
+}
+
 interface AppStoreContextValue {
   courses: Course[]
   nowIso: string
   addCourse: (input: AddCourseInput) => Course
+  addCourseFromGraph: (input: AddCourseFromGraphInput) => Course
+  removeCourse: (courseId: string) => void
   applyEvaluation: (courseId: string, conceptId: string, evaluation: EvaluationResult) => void
   applyQuizResult: (courseId: string, conceptId: string, result: QuizSessionResult) => void
   applyRecapAction: (courseId: string, conceptId: string) => void
@@ -123,6 +132,31 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     return created
   }, [])
 
+  const addCourseFromGraph = useCallback((input: AddCourseFromGraphInput) => {
+    const now = new Date().toISOString()
+    const created = createCourseFromExtractedGraph(
+      input.name,
+      input.syllabus,
+      input.extractedGraph,
+      now,
+      input.sourceFileIds,
+    )
+
+    setState((prev) => ({
+      ...prev,
+      courses: [created, ...prev.courses],
+    }))
+
+    return created
+  }, [])
+
+  const removeCourse = useCallback((courseId: string) => {
+    setState((prev) => ({
+      ...prev,
+      courses: prev.courses.filter((course) => course.id !== courseId),
+    }))
+  }, [])
+
   const applyEvaluation = useCallback((courseId: string, conceptId: string, evaluation: EvaluationResult) => {
     setState((prev) => {
       const now = new Date().toISOString()
@@ -214,11 +248,13 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       courses: state.courses,
       nowIso,
       addCourse,
+      addCourseFromGraph,
+      removeCourse,
       applyEvaluation,
       applyQuizResult,
       applyRecapAction,
     }),
-    [addCourse, applyEvaluation, applyQuizResult, applyRecapAction, nowIso, state.courses],
+    [addCourse, addCourseFromGraph, removeCourse, applyEvaluation, applyQuizResult, applyRecapAction, nowIso, state.courses],
   )
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>
